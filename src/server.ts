@@ -104,8 +104,14 @@ app.get("/wallet/:clientId", async (req, res) => {
   res.json({ clientId: id, balance: wallet?.balance ?? 0, entries: list });
 });
 
-// Express 5 sends rejected async handlers here. Reply with a bare 500 so no internals leak.
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+// Express 5 sends rejected async handlers and body-parser failures here. Body-parser errors (broken JSON,
+// body too large) carry a 4xx status and are the caller's fault; anything else is ours, so a bare 500.
+// The 4xx note leaves out err.message because it can echo part of the request body.
+app.use((err: Error & { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err.status && err.status >= 400 && err.status < 500) {
+    res.locals.note = `bad request body status=${err.status}`;
+    return res.status(err.status).json({ error: "bad request body" });
+  }
   res.locals.note = `error=${err.message}`;
   res.sendStatus(500);
 });
